@@ -5,7 +5,10 @@ defmodule SpandexDatadog.ApiServer do
 
   use GenServer
   require Logger
-  alias Spandex.Span
+  alias Spandex.{
+    Span,
+    SpanContext
+  }
 
   defstruct [
     :asynchronous_send?,
@@ -95,13 +98,15 @@ defmodule SpandexDatadog.ApiServer do
   """
   @spec send_spans(spans :: list(map), Keyword.t()) :: :ok
   def send_spans(spans, opts \\ []) do
-    GenServer.call(__MODULE__, {:send_spans, spans}, Keyword.get(opts, :timeout, 30_000))
+    timeout = Keyword.get(opts, :timeout, 30_000)
+    span_context = Keyword.get(opts, :span_context, %SpanContext{})
+    GenServer.call(__MODULE__, {:send_spans, spans, span_context}, timeout)
   end
 
   @doc false
-  @spec handle_call({:send_spans, spans :: list(map)}, term, state :: t) :: {:reply, :ok, t}
+  @spec handle_call({:send_spans, [Span.t()], SpanContext.t()}, term(), __MODULE__.t()) :: {:reply, :ok, t}
   def handle_call(
-        {:send_spans, spans},
+        {:send_spans, spans, _span_context},
         _from,
         %__MODULE__{waiting_traces: waiting_traces, batch_size: batch_size, verbose?: verbose?} = state
       )
@@ -115,7 +120,7 @@ defmodule SpandexDatadog.ApiServer do
   end
 
   def handle_call(
-        {:send_spans, spans},
+        {:send_spans, spans, span_context},
         _from,
         %__MODULE__{
           verbose?: verbose?,
@@ -154,7 +159,7 @@ defmodule SpandexDatadog.ApiServer do
       if below_sync_threshold? do
         Task.start(fn ->
           try do
-            send_and_log(all_traces, state)
+            send_and_log(all_traces, span_context, state)
           after
             Agent.update(agent_pid, fn count -> count - 1 end)
           end
@@ -162,36 +167,35 @@ defmodule SpandexDatadog.ApiServer do
       else
         # We get benefits from running in a separate process (like better GC)
         # So we async/await here to mimic the behavour above but still apply backpressure
-        task = Task.async(fn -> send_and_log(all_traces, state) end)
+        task = Task.async(fn -> send_and_log(all_traces, span_context, state) end)
         Task.await(task)
       end
     else
-      send_and_log(all_traces, state)
+      send_and_log(all_traces, span_context, state)
     end
 
     {:reply, :ok, %{state | waiting_traces: []}}
   end
 
-  @spec send_and_log(traces :: list(list(map)), any) :: :ok
-  def send_and_log(traces, %{verbose?: verbose?} = state) do
+  @spec send_and_log([Span.t()], SpanContext.t(), __MODULE__.t()) :: :ok
+  def send_and_log(spans, span_context, %{verbose?: verbose?} = state) do
     response =
-      traces
-      |> Enum.map(fn trace ->
-        Enum.map(trace, &format/1)
+      spans
+      |> Enum.map(fn span ->
+        Enum.map(span, &format(&1, span_context))
       end)
       |> encode()
       |> push(state)
 
-    _ =
-      if verbose? do
-        Logger.debug(fn -> "Trace response: #{inspect(response)}" end)
-      end
+    if verbose? do
+      Logger.debug(fn -> "Trace response: #{inspect(response)}" end)
+    end
 
     :ok
   end
 
-  @spec format(Span.t()) :: map
-  def format(span) do
+  @spec format(Span.t(), SpanContext.t()) :: map
+  def format(span, span_context) do
     %{
       trace_id: span.trace_id,
       span_id: span.id,
@@ -203,7 +207,8 @@ defmodule SpandexDatadog.ApiServer do
       resource: span.resource,
       service: span.service,
       type: span.type,
-      meta: meta(span)
+      meta: meta(span),
+      metrics: metrics(span_context)
     }
   end
 
@@ -217,6 +222,11 @@ defmodule SpandexDatadog.ApiServer do
     |> add_tags(span)
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Enum.into(%{})
+  end
+
+  @spec metrics(SpanContext.t()) :: map
+  defp metrics(span_context) do
+    %{_sampling_priority_v1: span_context.priority}
   end
 
   @spec add_datadog_meta(map, Span.t()) :: map

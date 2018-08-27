@@ -3,6 +3,7 @@ defmodule SpandexDatadog.ApiServerTest do
 
   import ExUnit.CaptureLog
 
+  alias Spandex.SpanContext
   alias SpandexDatadog.ApiServer
 
   defmodule TestOkApiServer do
@@ -23,7 +24,7 @@ defmodule SpandexDatadog.ApiServerTest do
     {:ok, agent_pid} = Agent.start_link(fn -> 0 end, name: :spandex_currently_send_count)
     trace_id = 4_743_028_846_331_200_905
 
-    span_1 =
+    {:ok, span_1} =
       Spandex.Span.new(
         id: 4_743_028_846_331_200_906,
         start: 1_527_752_052_216_478_000,
@@ -34,7 +35,7 @@ defmodule SpandexDatadog.ApiServerTest do
         completion_time: 1_527_752_052_216_578_000
       )
 
-    span_2 =
+    {:ok, span_2} =
       Spandex.Span.new(
         id: 4_743_029_846_331_200_906,
         start: 1_527_752_052_216_578_001,
@@ -68,7 +69,7 @@ defmodule SpandexDatadog.ApiServerTest do
     test "doesn't log anything when verbose?: false", %{spans: spans, state: state, url: url} do
       log =
         capture_log(fn ->
-          {:reply, :ok, _} = ApiServer.handle_call({:send_spans, spans}, self(), state)
+          {:reply, :ok, _} = ApiServer.handle_call({:send_spans, spans, %SpanContext{}}, self(), state)
         end)
 
       assert log == ""
@@ -82,7 +83,10 @@ defmodule SpandexDatadog.ApiServerTest do
           "service" => "foo",
           "span_id" => 4_743_028_846_331_200_906,
           "start" => 1_527_752_052_216_478_000,
-          "trace_id" => 4_743_028_846_331_200_905
+          "trace_id" => 4_743_028_846_331_200_905,
+          "metrics" => %{
+            "_sampling_priority_v1" => 1
+          }
         },
         %{
           "duration" => 100_000_000,
@@ -92,7 +96,10 @@ defmodule SpandexDatadog.ApiServerTest do
           "service" => "bar",
           "span_id" => 4_743_029_846_331_200_906,
           "start" => 1_527_752_052_216_578_001,
-          "trace_id" => 4_743_028_846_331_200_905
+          "trace_id" => 4_743_028_846_331_200_905,
+          "metrics" => %{
+            "_sampling_priority_v1" => 1
+          }
         }
       ]
 
@@ -107,7 +114,7 @@ defmodule SpandexDatadog.ApiServerTest do
 
       [processing, received_spans, response] =
         capture_log(fn ->
-          {:reply, :ok, _} = ApiServer.handle_call({:send_spans, spans}, self(), state)
+          {:reply, :ok, _} = ApiServer.handle_call({:send_spans, spans, %SpanContext{}}, self(), state)
         end)
         |> String.split("\n")
         |> Enum.reject(fn s -> s == "" end)
@@ -125,7 +132,10 @@ defmodule SpandexDatadog.ApiServerTest do
           "service" => "foo",
           "span_id" => 4_743_028_846_331_200_906,
           "start" => 1_527_752_052_216_478_000,
-          "trace_id" => 4_743_028_846_331_200_905
+          "trace_id" => 4_743_028_846_331_200_905,
+          "metrics" => %{
+            "_sampling_priority_v1" => 1
+          }
         },
         %{
           "duration" => 100_000_000,
@@ -135,7 +145,10 @@ defmodule SpandexDatadog.ApiServerTest do
           "service" => "bar",
           "span_id" => 4_743_029_846_331_200_906,
           "start" => 1_527_752_052_216_578_001,
-          "trace_id" => 4_743_028_846_331_200_905
+          "trace_id" => 4_743_028_846_331_200_905,
+          "metrics" => %{
+            "_sampling_priority_v1" => 1
+          }
         }
       ]
 

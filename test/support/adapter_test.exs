@@ -6,7 +6,8 @@ defmodule Spandex.Test.Datadog.AdapterTest do
   test "a complete trace sends spans" do
     TracedModule.trace_one_thing()
 
-    Enum.each(Util.sent_spans(), fn span ->
+    spans = Util.sent_spans()
+    Enum.each(spans, fn span ->
       assert span.service == :spandex_test
       assert span.meta.env == "test"
     end)

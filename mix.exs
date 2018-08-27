@@ -14,7 +14,6 @@ defmodule SpandexDatadog.MixProject do
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger]
@@ -22,7 +21,6 @@ defmodule SpandexDatadog.MixProject do
   end
 
   defp package do
-    # These are the default files included in the package
     [
       name: :spandex_datadog,
       maintainers: ["Zachary Daniel"],
@@ -37,15 +35,14 @@ defmodule SpandexDatadog.MixProject do
     """
   end
 
-  # Specifies which paths to compile per environment.
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:ex_doc, ">= 0.0.0", only: :dev},
-      {:spandex, ">= 2.0.0"},
+      #{:spandex, "~> 2.1"},
+      {:spandex, github: "spandex-project/spandex", ref: "distributed_span_context"},
       {:httpoison, "~> 0.13", only: :test},
       {:msgpax, "~> 1.1"}
     ]
